@@ -1,4 +1,4 @@
-package com.test.exoplayer2;
+package com.deepforensic.gallerylock.business.repositories;
 
 import android.net.Uri;
 
@@ -7,19 +7,21 @@ import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DataSpec;
 import com.google.android.exoplayer2.upstream.TransferListener;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInputStream;
 import java.math.BigInteger;
 import java.util.Arrays;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
+import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Created by michaeldunn on 3/13/17.
@@ -27,30 +29,35 @@ import javax.crypto.spec.SecretKeySpec;
 
 public final class EncryptedFileDataSource implements DataSource {
 
-  private final TransferListener<? super EncryptedFileDataSource> mTransferListener;
   private StreamingCipherInputStream mInputStream;
   private Uri mUri;
   private long mBytesRemaining;
   private boolean mOpened;
-  private Cipher mCipher;
-  private SecretKeySpec mSecretKeySpec;
-  private IvParameterSpec mIvParameterSpec;
+  private final Cipher mCipher;
+  private final SecretKey mSecretKeySpec;
+  private final IvParameterSpec mIvParameterSpec;
 
-  public EncryptedFileDataSource(Cipher cipher, SecretKeySpec secretKeySpec, IvParameterSpec ivParameterSpec, TransferListener<? super EncryptedFileDataSource> listener) {
+  public EncryptedFileDataSource(Cipher cipher, SecretKey secretKeySpec, IvParameterSpec ivParameterSpec) {
     mCipher = cipher;
     mSecretKeySpec = secretKeySpec;
     mIvParameterSpec = ivParameterSpec;
-    mTransferListener = listener;
   }
 
   @Override
-  public long open(DataSpec dataSpec) throws EncryptedFileDataSourceException {
+  public void addTransferListener(@NotNull TransferListener transferListener) {
+  }
+
+  @Override
+  public long open(@NotNull DataSpec dataSpec) throws EncryptedFileDataSourceException {
+
     // if we're open, we shouldn't need to open again, fast-fail
     if (mOpened) {
       return mBytesRemaining;
     }
+
     // #getUri is part of the contract...
     mUri = dataSpec.uri;
+
     // put all our throwable work in a single block, wrap the error in a custom Exception
     try {
       setupInputStream();
@@ -58,20 +65,25 @@ public final class EncryptedFileDataSource implements DataSource {
       computeBytesRemaining(dataSpec);
     } catch (IOException e) {
       throw new EncryptedFileDataSourceException(e);
+    } catch (Exception e) {
+      e.printStackTrace();
     }
+
     // if we made it this far, we're open
     mOpened = true;
-    // notify
-    if (mTransferListener != null) {
-      mTransferListener.onTransferStart(this, dataSpec);
-    }
+
     // report
     return mBytesRemaining;
   }
 
-  private void setupInputStream() throws FileNotFoundException {
+  private void setupInputStream() throws Exception {
     File encryptedFile = new File(mUri.getPath());
     FileInputStream fileInputStream = new FileInputStream(encryptedFile);
+
+    //Read EncryptedHeader
+    ObjectInputStream objectInputStream = new ObjectInputStream(fileInputStream);
+    objectInputStream.readObject();
+
     mInputStream = new StreamingCipherInputStream(fileInputStream, mCipher, mSecretKeySpec, mIvParameterSpec);
   }
 
@@ -106,6 +118,7 @@ public final class EncryptedFileDataSource implements DataSource {
     } catch (IOException e) {
       throw new EncryptedFileDataSourceException(e);
     }
+
     // if we get a -1 that means we failed to read - we're either going to EOF error or broadcast EOF
     if (bytesRead == -1) {
       if (mBytesRemaining != C.LENGTH_UNSET) {
@@ -117,10 +130,7 @@ public final class EncryptedFileDataSource implements DataSource {
     if (mBytesRemaining != C.LENGTH_UNSET) {
       mBytesRemaining -= bytesRead;
     }
-    // notify
-    if (mTransferListener != null) {
-      mTransferListener.onBytesTransferred(this, bytesRead);
-    }
+
     // report
     return bytesRead;
   }
@@ -150,9 +160,6 @@ public final class EncryptedFileDataSource implements DataSource {
       mInputStream = null;
       if (mOpened) {
         mOpened = false;
-        if (mTransferListener != null) {
-          mTransferListener.onTransferEnd(this);
-        }
       }
     }
   }
@@ -167,12 +174,12 @@ public final class EncryptedFileDataSource implements DataSource {
 
     private static final int AES_BLOCK_SIZE = 16;
 
-    private InputStream mUpstream;
-    private Cipher mCipher;
-    private SecretKeySpec mSecretKeySpec;
-    private IvParameterSpec mIvParameterSpec;
+    private final InputStream mUpstream;
+    private final Cipher mCipher;
+    private final SecretKey mSecretKeySpec;
+    private final IvParameterSpec mIvParameterSpec;
 
-    public StreamingCipherInputStream(InputStream inputStream, Cipher cipher, SecretKeySpec secretKeySpec, IvParameterSpec ivParameterSpec) {
+    public StreamingCipherInputStream(InputStream inputStream, Cipher cipher, SecretKey secretKeySpec, IvParameterSpec ivParameterSpec) {
       super(inputStream, cipher);
       mUpstream = inputStream;
       mCipher = cipher;
@@ -203,6 +210,7 @@ public final class EncryptedFileDataSource implements DataSource {
           computedIvParameterSpecForOffset = new IvParameterSpec(ivForOffsetByteArray, ivForOffsetByteArray.length - AES_BLOCK_SIZE, AES_BLOCK_SIZE);
         }
         mCipher.init(Cipher.ENCRYPT_MODE, mSecretKeySpec, computedIvParameterSpecForOffset);
+
         byte[] skipBuffer = new byte[skip];
         // i get that we need to update, but i don't get how we're able to take the shortcut from here to the previous comment
         mCipher.update(skipBuffer, 0, skip, skipBuffer);
@@ -220,7 +228,6 @@ public final class EncryptedFileDataSource implements DataSource {
     public int available() throws IOException {
       return mUpstream.available();
     }
-
   }
 
 }

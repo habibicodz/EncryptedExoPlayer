@@ -1,11 +1,10 @@
-package com.test.exoplayer2;
+package com.deepforensic.gallerylock.business.repositories;
 
 import com.google.android.exoplayer2.upstream.DataSource;
-import com.google.android.exoplayer2.upstream.TransferListener;
 
 import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Created by michaeldunn on 3/13/17.
@@ -13,21 +12,19 @@ import javax.crypto.spec.SecretKeySpec;
 
 public class EncryptedFileDataSourceFactory implements DataSource.Factory {
 
-  private Cipher mCipher;
-  private SecretKeySpec mSecretKeySpec;
-  private IvParameterSpec mIvParameterSpec;
-  private TransferListener<? super DataSource> mTransferListener;
+  private final Cipher mCipher;
+  private final SecretKey mSecretKeySpec;
+  private final IvParameterSpec mIvParameterSpec;
 
-  public EncryptedFileDataSourceFactory(Cipher cipher, SecretKeySpec secretKeySpec, IvParameterSpec ivParameterSpec, TransferListener<? super DataSource> listener) {
+  public EncryptedFileDataSourceFactory(Cipher cipher, SecretKey secretKeySpec, IvParameterSpec ivParameterSpec) {
     mCipher = cipher;
     mSecretKeySpec = secretKeySpec;
     mIvParameterSpec = ivParameterSpec;
-    mTransferListener = listener;
   }
 
   @Override
   public EncryptedFileDataSource createDataSource() {
-    return new EncryptedFileDataSource(mCipher, mSecretKeySpec, mIvParameterSpec, mTransferListener);
+    return new EncryptedFileDataSource(mCipher, mSecretKeySpec, mIvParameterSpec);
   }
 
 }
